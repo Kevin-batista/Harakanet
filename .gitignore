@@ -12,3 +12,6 @@ coverage
 .vite
 .DS_Store
 HARAKANET/
+.env.local
+.vercel
+.env*
