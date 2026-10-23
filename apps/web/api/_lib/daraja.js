@@ -10,6 +10,13 @@ const TX_TYPE =
     ? 'CustomerBuyGoodsOnline'
     : 'CustomerPayBillOnline';
 
+// Sandbox: money "goes to" the test shortcode itself, so PartyB must equal it.
+// Production: PartyB is your real Till (DARAJA_TILL).
+const PARTY_B =
+  process.env.DARAJA_ENV === 'production'
+    ? process.env.DARAJA_TILL
+    : process.env.DARAJA_SHORTCODE;
+
 let tokenCache = { value: null, expiresAt: 0 };
 
 async function getToken() {
@@ -57,7 +64,7 @@ export async function stkPush({ amount, payer, reference }) {
       TransactionType: TX_TYPE,
       Amount: Math.round(amount),
       PartyA: payer,
-      PartyB: process.env.DARAJA_TILL,
+      PartyB: PARTY_B,
       PhoneNumber: payer,
       CallBackURL: callbackUrl,
       AccountReference: String(reference).slice(0, 12),
