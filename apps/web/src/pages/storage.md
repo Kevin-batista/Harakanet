@@ -58,6 +58,8 @@ import {
   Send,
   Star,
   Wallet,
+  WifiOff,
+  ArrowRight,
 } from 'lucide-react';
 
 /* ============================================================================
@@ -81,6 +83,8 @@ const CONFIG = {
 
   // Manual-payment fallback (shown in the checkout dialog and the footer).
   PAYBILL: '1836150',
+  // Offline payment: Lipa na M-Pesa, Buy Goods and Services.
+  TILL: '1836150',
   // What the customer types as the Account number when paying manually.
   // CONNECT: change this text if your fulfilment bot expects something else.
   ACCOUNT_HINT: 'the phone number that should get the bundle',
@@ -117,8 +121,8 @@ const CONFIG = {
 
 const CATEGORIES = [
   {
-    id: 'bingwa',
-    name: 'Bingwa Offers',
+    id: 'everyday',
+    name: 'Data Deals',
     blurb: 'Everyday data at the lowest prices.',
     icon: Wifi,
     accent: '#1473C8',
@@ -147,13 +151,13 @@ const CATEGORIES = [
 ];
 
 const PLANS = [
-  // ---- Bingwa Offers -------------------------------------------------------
-  { id: 'b19', cat: 'bingwa', price: 19, qty: '1', unit: 'GB', mb: 1024, validity: '1 hour', nightOnly: true, badge: 'Lowest price per GB' },
-  { id: 'b20', cat: 'bingwa', price: 20, qty: '250', unit: 'MB', mb: 250, validity: '24 hours' },
-  { id: 'b49', cat: 'bingwa', price: 49, qty: '400', unit: 'MB', mb: 400, validity: '7 days' },
-  { id: 'b50', cat: 'bingwa', price: 50, qty: '1.5', unit: 'GB', mb: 1536, validity: '3 hours', nightOnly: true },
-  { id: 'b55', cat: 'bingwa', price: 55, qty: '1', unit: 'GB', mb: 1024, validity: 'Till midnight' },
-  { id: 'b99', cat: 'bingwa', price: 99, qty: '1.5', unit: 'GB', mb: 1536, validity: '24 hours' },
+  // ---- Data Deals ----------------------------------------------------------
+  { id: 'b19', cat: 'everyday', price: 19, qty: '1', unit: 'GB', mb: 1024, validity: '1 hour', nightOnly: true, badge: 'Lowest price per GB' },
+  { id: 'b20', cat: 'everyday', price: 20, qty: '250', unit: 'MB', mb: 250, validity: '24 hours' },
+  { id: 'b49', cat: 'everyday', price: 49, qty: '400', unit: 'MB', mb: 400, validity: '7 days' },
+  { id: 'b50', cat: 'everyday', price: 50, qty: '1.5', unit: 'GB', mb: 1536, validity: '3 hours', nightOnly: true },
+  { id: 'b55', cat: 'everyday', price: 55, qty: '1', unit: 'GB', mb: 1024, validity: 'Till midnight' },
+  { id: 'b99', cat: 'everyday', price: 99, qty: '1.5', unit: 'GB', mb: 1536, validity: '24 hours' },
 
   // ---- Pata More Deals -----------------------------------------------------
   { id: 'p22', cat: 'pata', price: 22, qty: '1', unit: 'GB', mb: 1024, validity: '1 hour', nightOnly: true },
@@ -276,6 +280,28 @@ function useNightWindow() {
     return () => clearInterval(id);
   }, []);
   return state;
+}
+
+/** True while the phone has a connection. Add ?offline=1 to the URL to force the offline view for testing. */
+function useOnlineStatus() {
+  const [online, setOnline] = useState(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  );
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    if (typeof window === 'undefined') return undefined;
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
+  const forced =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('offline') === '1';
+  return online && !forced;
 }
 
 function perGb(plan) {
@@ -457,7 +483,7 @@ const catIndex = (id) => CATEGORIES.findIndex((c) => c.id === id);
 
 // Section order on the board: data first, then minutes, then SMS.
 const BUNDLE_GROUPS = [
-{ id: 'data', label: 'Data bundles', cats: ['bingwa', 'pata'] },
+{ id: 'data', label: 'Data bundles', cats: ['everyday', 'pata'] },
 { id: 'minutes', label: 'Minutes', cats: ['minutes'] },
 { id: 'sms', label: 'SMS', cats: ['sms'] },
 ];
@@ -1318,6 +1344,100 @@ function BubblyText({ text, offset = 0 }) {
 }
 
 /* ============================================================================
+ *  8e. OFFLINE VIEW: ticker + Lipa na M-Pesa Till checkout
+ * ========================================================================== */
+
+function OfflineTicker() {
+  const msg = `This is the offline view of Haraka Net. We have made it so you can reach us anywhere you are, even without bundles. Pay with Lipa na M-Pesa, Buy Goods and Services, Till ${CONFIG.TILL}.`;
+  return (
+    <div className="hk-offline-ticker" aria-live="polite">
+      <div className="hk-offline-track">
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className="hk-offline-message">{msg}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OfflinePay({ plan, onClose }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  const copyTill = async () => {
+    try {
+      await navigator.clipboard.writeText(CONFIG.TILL);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      /* clipboard blocked, the number is visible on screen */
+    }
+  };
+
+  return (
+    <div
+      className="hk-overlay"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="hk-state hk-off">
+        <span className="hk-off-badge">
+          <WifiOff size={14} aria-hidden="true" /> Offline payment
+        </span>
+
+        <h2 id="hk-off-title" className="hk-dialog-title">
+          Pay with Lipa na M-Pesa
+        </h2>
+        <p className="hk-off-desc">
+          Pay for {plan.qty} {plan.unit} ({plan.validity}) using Buy Goods and Services.
+        </p>
+
+        <div className="hk-off-till">
+          <span className="hk-off-till-label">Till number</span>
+          <strong className="hk-off-till-number">{CONFIG.TILL}</strong>
+          <span className="hk-off-till-amount">Amount: Ksh {plan.price}</span>
+        </div>
+
+        <ol className="hk-off-steps">
+          <li>Open M-Pesa on your phone and choose Lipa na M-Pesa.</li>
+          <li>Select Buy Goods and Services.</li>
+          <li>Enter Till number <b>{CONFIG.TILL}</b>.</li>
+          <li>Enter the amount <b>Ksh {plan.price}</b>, then your M-Pesa PIN.</li>
+          <li>Pay from the number that should get the bundle. It is sent once your payment is confirmed.</li>
+        </ol>
+
+        <button type="button" className="hk-off-btn" onClick={copyTill}>
+          {copied ? 'Copied' : 'Copy till number'}
+          {copied ? <Check size={20} aria-hidden="true" /> : <ArrowRight size={20} aria-hidden="true" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Online shows the STK Push checkout, offline shows the Till instructions. */
+function CheckoutGate({ offline, plan, initialPhone, onClose }) {
+  return offline ? (
+    <OfflinePay plan={plan} onClose={onClose} />
+  ) : (
+    <Checkout plan={plan} initialPhone={initialPhone} onClose={onClose} />
+  );
+}
+
+/* ============================================================================
  *  9. THE PAGE
  * ========================================================================== */
 
@@ -1333,6 +1453,17 @@ export default function HomePage() {
   const [budget, setBudget] = useState('all');
 
   const night = useNightWindow();
+  const online = useOnlineStatus();
+  const offline = !online;
+
+  // Register the service worker (production builds only) so the site opens offline.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') return;
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  }, []);
+
   const [autoPlay, setAutoPlay] = useState(true);
   const resumeTimer = useRef(null);
 
@@ -1400,7 +1531,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="hk-root">
+    <div className={`hk-root${offline ? ' is-offline' : ''}`}>
       <style>{CSS}</style>
 
       {/* ============================ NAVIGATION ============================ */}
@@ -1432,6 +1563,8 @@ export default function HomePage() {
           </button>
         </div>
 
+        {offline && <OfflineTicker />}
+
         <div className={`hk-mobile-menu${menuOpen ? ' is-open' : ''}`}>
           <div className="hk-container">
             <button type="button" onClick={() => navTo('bundles')}>Bundles</button>
@@ -1446,7 +1579,7 @@ export default function HomePage() {
       </header>
 
       {/* The header is position:fixed, so this spacer keeps page content from sliding under it. */}
-      <div className="hk-nav-spacer" aria-hidden="true" />
+      <div className={`hk-nav-spacer${offline ? ' has-ticker' : ''}`} aria-hidden="true" />
 
       <main id="top">
         {/* ============================== HERO ============================== */}
@@ -1786,8 +1919,8 @@ export default function HomePage() {
 
       {/* ============================== CHECKOUT ============================== */}
       {checkout && (
-        <Checkout
-          key={checkout.plan.id}
+        <CheckoutGate
+          offline={offline}
           plan={checkout.plan}
           initialPhone={checkout.phone}
           onClose={closeCheckout}
@@ -1895,6 +2028,11 @@ const CSS = `
 .hk-nav-inner { display: flex; align-items: center; gap: 24px; height: 72px; transition: height .3s cubic-bezier(.2,.7,.2,1); }
 .hk-nav.is-scrolled .hk-nav-inner { height: 60px; }
 .hk-nav-spacer { height: 72px; }
+.hk-nav-spacer.has-ticker { height: 108px; }
+.hk-offline-ticker { position: sticky; top: 72px; z-index: 55; overflow: hidden; background: linear-gradient(135deg, rgba(11,42,91,.96), rgba(20,115,200,.96)); color: #fff; border-bottom: 1px solid rgba(255,255,255,.18); }
+.hk-offline-track { display: flex; width: max-content; min-width: 100%; animation: hk-offline-scroll 20s linear infinite; }
+.hk-offline-message { display: inline-flex; align-items: center; padding: 10px 28px; white-space: nowrap; font-size: .8rem; font-weight: 700; letter-spacing: .02em; }
+@keyframes hk-offline-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 .hk-nav-logo { display: inline-flex; margin-right: auto; }
 .hk-nav-links { display: flex; gap: 6px; }
 .hk-nav-links button, .hk-mobile-menu button:not(.hk-btn) { background: none; border: 0; padding: 9px 14px; border-radius: 10px; font-weight: 600; color: var(--muted); transition: color .18s ease, background .18s ease; }
@@ -2285,6 +2423,18 @@ const CSS = `
 .hk-copy { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); font-weight: 800; color: var(--navy); }
 .hk-copy:hover { border-color: var(--blue); }
 
+.hk-state.hk-off { gap: 10px; }
+.hk-off-badge { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; padding: 6px 12px; border-radius: 999px; background: #FFF3EA; color: var(--orange-deep); font-size: .74rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.hk-off-desc { color: var(--muted); font-size: .95rem; margin-bottom: 4px; }
+.hk-off-till { display: grid; gap: 5px; padding: 18px 20px; border-radius: 20px; background: linear-gradient(135deg, #E4F3FE 0%, #D7EEFF 100%); border: 2px solid #C7E2FB; }
+.hk-off-till-label { font-size: .74rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.hk-off-till-number { font-family: 'Fredoka', 'Sora', sans-serif; font-size: clamp(1.8rem, 8vw, 2.3rem); letter-spacing: -.03em; color: var(--navy); line-height: 1; }
+.hk-off-till-amount { font-weight: 800; color: var(--navy); }
+.hk-off-steps { display: grid; gap: 8px; padding-left: 18px; color: var(--muted); font-size: .92rem; list-style: decimal; }
+.hk-off-steps li::marker { color: var(--navy); font-weight: 700; }
+.hk-off-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; margin-top: 4px; padding: 14px 18px; border: 0; border-radius: 18px; background: linear-gradient(135deg, var(--navy), #1473C8); color: #fff; font-weight: 800; box-shadow: 0 9px 20px rgba(20,115,200,.28); }
+.hk-off-btn:hover { transform: translateY(-2px); }
+
 .hk-state { display: grid; gap: 4px; }
 .hk-state-center { justify-items: center; text-align: center; }
 .hk-state-center .hk-dialog-title { padding-right: 0; }
@@ -2346,10 +2496,7 @@ const CSS = `
   .hk-why-grid { grid-template-columns: 1fr; }
   .hk-footer-grid { grid-template-columns: 1fr; }
   .hk-hero-actions .hk-btn { flex: 1 1 100%; }
-  .hk-overlay { align-items: end; padding: 0; }
-  .hk-dialog { max-width: none; border-radius: 26px 26px 0 0; max-height: 94vh; animation-name: hk-sheet-in; }
 }
-@keyframes hk-sheet-in { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: none; } }
 @media (max-width: 380px) {
   .hk-quick-picks { grid-template-columns: 1fr; }
   .hk-logo-tag { display: none; }
@@ -2510,16 +2657,116 @@ const CSS = `
 /* Failed: shaky icon */
 .hk-fail-ico { width: 80px; height: 80px; border: 3px solid #fff; box-shadow: 0 5px 0 #F3B9B3; animation: hk-ck-shake .7s .2s ease both; }
 
-/* Phone: bottom sheet that bounces up */
+/* =====================================================================
+CHECKOUT: MOBILE FLOATING CARD
+Centered, compact, pops up with the same bouncy hk-ck-in animation.
+===================================================================== */
 @media (max-width: 640px) {
-  .hk-dialog { max-width: none; border-bottom: 0; border-radius: 32px 32px 0 0; padding-bottom: max(26px, env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px rgba(11,42,91,.3); animation-name: hk-ck-sheet; }
-  .hk-summary-amount { font-size: 1.85rem; }
+  .hk-overlay {
+    display: flex;
+    padding: 16px;
+    padding-top: max(16px, env(safe-area-inset-top));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    background: rgba(7, 30, 68, .5);
+    overscroll-behavior: contain;
+  }
+
+  .hk-dialog {
+    margin: auto;
+    width: 100%;
+    max-width: 360px;
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    padding: 20px 18px 18px;
+    border: 3px solid #fff;
+    border-radius: 32px;
+    box-shadow: 0 10px 0 rgba(11,42,91,.14), 0 28px 60px rgba(11,42,91,.35);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    animation-name: hk-ck-in;
+  }
+  .hk-dialog::-webkit-scrollbar { display: none; }
+
+  .hk-dialog-close { top: 12px; right: 12px; width: 36px; height: 36px; }
+  .hk-dialog-title { font-size: 1.45rem; margin-bottom: 12px; padding-right: 42px; }
+
+  .hk-summary { gap: 10px; padding: 12px 14px; margin-bottom: 14px; border-radius: 22px; }
+  .hk-summary-amount { font-size: 1.6rem; }
+  .hk-summary-validity { font-size: .8rem; padding: 2px 9px; }
+  .hk-summary-price { width: 64px; height: 64px; font-size: 1.35rem; }
+  .hk-summary-price span { font-size: .55rem; }
+
+  .hk-dialog .hk-label { font-size: .92rem; margin-bottom: 5px; }
+  .hk-dialog .hk-input-wrap { margin-bottom: 10px; }
+  .hk-dialog .hk-input { padding: 12px 14px 12px 44px; font-size: 1.02rem; border-radius: 16px; }
+  .hk-dialog .hk-check { padding: 9px 12px; margin-bottom: 10px; font-size: .9rem; border-radius: 14px; }
+
+  .hk-dialog .hk-btn-primary { padding: 14px 16px; font-size: 1.02rem; border-radius: 18px; }
+  .hk-fineprint { margin-top: 10px; font-size: .8rem; }
+  .hk-manual-toggle { margin-top: 12px; padding: 10px 14px; font-size: .92rem; }
+  .hk-manual-steps { padding: 12px 14px 12px 32px; font-size: .88rem; }
+
+  .hk-state-center .hk-dialog-title { font-size: 1.6rem; }
+  .hk-tick { width: 80px; height: 80px; }
+  .hk-fail-ico { width: 68px; height: 68px; }
+  .hk-step-ico { width: 38px; height: 38px; }
+  .hk-state-text { margin-bottom: 14px; }
 }
-@keyframes hk-ck-sheet {
-  from { transform: translateY(100%); }
-  60%  { transform: translateY(-14px); }
-  80%  { transform: translateY(4px); }
-  to   { transform: none; }
+
+@media (max-width: 640px) and (max-height: 640px) {
+  .hk-dialog { padding: 16px 16px 14px; }
+  .hk-dialog-title { font-size: 1.3rem; margin-bottom: 8px; }
+  .hk-summary { margin-bottom: 10px; padding: 10px 12px; }
+  .hk-summary-amount { font-size: 1.4rem; }
+  .hk-summary-price { width: 56px; height: 56px; font-size: 1.2rem; }
+  .hk-fineprint { display: none; }
+}
+
+/* =====================================================================
+   OFFLINE VIEW
+   ===================================================================== */
+.hk-nav-spacer.has-ticker { height: 106px; }
+.hk-root.is-offline .hk-section { scroll-margin-top: 100px; }
+
+/* Ticker: lives inside the fixed header, so it is always just below the navbar */
+.hk-ticker { display: flex; align-items: center; height: 34px; overflow: hidden; color: #fff; background: linear-gradient(90deg, var(--navy-deep), var(--navy)); border-top: 1px solid rgba(255,255,255,.08); }
+.hk-ticker-badge { position: relative; z-index: 1; flex: none; display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 12px; background: linear-gradient(135deg, #FF8E2E, var(--orange-deep)); font-family: 'Fredoka', 'Sora', sans-serif; font-size: .78rem; font-weight: 600; box-shadow: 4px 0 10px rgba(4,20,52,.35); }
+.hk-ticker-window { flex: 1; min-width: 0; overflow: hidden; }
+.hk-ticker-track { display: flex; width: max-content; animation: hk-ticker 34s linear infinite; }
+.hk-ticker-item { flex: none; padding-right: 64px; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+@keyframes hk-ticker { to { transform: translateX(-25%); } }
+
+/* Offline checkout card (soft gradient, lime badge, big white pill button) */
+.hk-dialog.hk-dialog-off { max-width: 380px; padding: 24px; border: 0; border-radius: 40px; background: linear-gradient(135deg, #F4F8F6 0%, #E7F0EE 45%, #F3F1DF 100%); box-shadow: 0 30px 70px rgba(11,42,91,.30); }
+.hk-dialog-off::before, .hk-dialog-off::after { content: none; }
+.hk-dialog-off .hk-dialog-close { top: 18px; right: 18px; width: 44px; height: 44px; border: 0; box-shadow: none; background: #fff; }
+.hk-dialog-off .hk-dialog-close:hover { background: #F1F5F3; }
+.hk-off { gap: 0; }
+.hk-off-badge { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; border-radius: 999px; background: #D8FB9A; color: #1E2B0E; font-family: 'Fredoka', sans-serif; font-size: 1rem; font-weight: 500; }
+.hk-dialog-off .hk-dialog-title { margin: 20px 0 8px; padding-right: 0; font-size: 1.65rem; font-weight: 600; color: #0E1512; }
+.hk-off-desc { margin-bottom: 16px; font-family: 'Fredoka', sans-serif; font-size: 1.02rem; font-weight: 400; line-height: 1.5; color: #7A807D; }
+.hk-off-till { display: grid; gap: 2px; margin-bottom: 16px; padding: 14px 18px; border-radius: 24px; background: #fff; box-shadow: 0 4px 14px rgba(11,42,91,.06); }
+.hk-off-till-label { font-family: 'Fredoka', sans-serif; font-size: .8rem; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: #7A807D; }
+.hk-off-till-number { font-family: 'Fredoka', sans-serif; font-size: 2.3rem; font-weight: 700; letter-spacing: .06em; line-height: 1.1; color: var(--navy); }
+.hk-off-till-amount { justify-self: start; margin-top: 6px; padding: 2px 12px; border-radius: 999px; background: #FFF0E0; color: var(--orange-deep); font-family: 'Fredoka', sans-serif; font-size: .92rem; font-weight: 600; }
+.hk-off-steps { display: grid; gap: 7px; margin: 0 0 18px; padding: 0 0 0 20px; list-style: decimal; font-family: 'Fredoka', sans-serif; font-size: .93rem; font-weight: 400; line-height: 1.45; color: #4B524F; }
+.hk-off-steps li::marker { color: var(--blue); font-weight: 700; }
+.hk-off-steps b { color: var(--navy); font-weight: 600; }
+.hk-off-btn { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 64px; border: 0; border-radius: 999px; background: #fff; color: #0E1512; font-family: 'Fredoka', sans-serif; font-size: 1.2rem; font-weight: 500; box-shadow: 0 6px 18px rgba(11,42,91,.08); transition: transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .2s ease; }
+.hk-off-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(11,42,91,.12); }
+.hk-off-btn:active { transform: scale(.97); }
+
+@media (max-width: 640px) {
+  .hk-dialog.hk-dialog-off { padding: 20px; border-radius: 36px; }
+  .hk-off-till-number { font-size: 2rem; }
+  .hk-off-btn { height: 58px; font-size: 1.1rem; }
+}
+
+/* Keep the ticker moving even though reduced motion shortens other animations */
+@media (prefers-reduced-motion: reduce) {
+  .hk-root .hk-ticker-track { animation: none !important; }
 }
 
 /* ---------- Reduced motion ---------- */
