@@ -1,71 +1,69 @@
-const VERSION = 'haraka-v2';
-const SHELL = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/android-chrome-192x192.png',
-  '/apple-touch-icon.png',
-  '/favicon-32x32.png',
-];
+// Haraka Net service worker.
+// Rules: never touch POSTs or /api/ calls, always return a real Response, and
+// serve a cached page only when the network is down.
+const CACHE = 'haraka-v2'; // bump this number whenever you change this file
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(VERSION).then((cache) =>
-      Promise.allSettled(SHELL.map((url) => cache.add(url)))
-    )
+    caches
+      .open(CACHE)
+      .then((c) => c.add('/index.html'))
+      .catch(() => {}) // a failed pre-cache must not block install
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-const cacheable = (res) => res && (res.ok || res.type === 'opaque');
-
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET') return;
-
   const url = new URL(req.url);
-  if (url.pathname.startsWith('/api')) return; // never cache payment calls
 
-  // Pages: network first, fall back to the saved copy when offline
+  // Leave these to the browser: payments, other sites, and anything that isn't a GET.
+  if (req.method !== 'GET') return;
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Page loads: network first, cached page only if offline.
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put('/', copy));
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('/index.html', copy));
+          }
           return res;
         })
-        .catch(() => caches.match('/') || caches.match('/index.html'))
+        .catch(() =>
+          caches.match('/index.html').then(
+            (cached) => cached || new Response('You are offline.', { status: 503 })
+          )
+        )
     );
     return;
   }
 
-  // Scripts, styles, images, fonts: serve saved copy, refresh in background
-  const sameOrigin = url.origin === self.location.origin;
-  const fonts = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
-  if (!sameOrigin && !fonts) return;
-
+  // Static files (JS, CSS, icons): cached copy if we have one, refreshed from the network.
   event.respondWith(
     caches.match(req).then((cached) => {
-      const fresh = fetch(req)
+      const network = fetch(req)
         .then((res) => {
-          if (cacheable(res)) {
+          if (res.ok && res.type === 'basic') {
             const copy = res.clone();
-            caches.open(VERSION).then((c) => c.put(req, copy));
+            caches.open(CACHE).then((c) => c.put(req, copy));
           }
           return res;
         })
-        .catch(() => cached);
-      return cached || fresh;
+        .catch(() => cached || new Response('', { status: 504 }));
+      return cached || network;
     })
   );
 });
