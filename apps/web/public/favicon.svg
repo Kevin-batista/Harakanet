@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Haraka Net favicon">
+  <defs>
+    <linearGradient id="hkGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12B5E5"/>
+      <stop offset="1" stop-color="#1060B8"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#hkGrad)"/>
+  <path d="M19 20v26M19 33h24M43 33v13" stroke="#fff" stroke-width="6" stroke-linecap="round" fill="none"/>
+  <path d="M34 38 L50 17" stroke="#FF8A2A" stroke-width="5.5" stroke-linecap="round" fill="none"/>
+  <path d="M43 14 L54 11 L51.5 22 Z" fill="#FF8A2A"/>
+</svg>
