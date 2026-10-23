@@ -3,6 +3,13 @@ const BASE =
     ? 'https://api.safaricom.co.ke'
     : 'https://sandbox.safaricom.co.ke';
 
+// Sandbox shortcode 174379 is Paybill-style, so the sandbox only accepts PayBill.
+// A real Till (production) must use BuyGoods. Chosen automatically from DARAJA_ENV.
+const TX_TYPE =
+  process.env.DARAJA_ENV === 'production'
+    ? 'CustomerBuyGoodsOnline'
+    : 'CustomerPayBillOnline';
+
 let tokenCache = { value: null, expiresAt: 0 };
 
 async function getToken() {
@@ -47,7 +54,7 @@ export async function stkPush({ amount, payer, reference }) {
       BusinessShortCode: process.env.DARAJA_SHORTCODE,
       Password: password(ts),
       Timestamp: ts,
-      TransactionType: 'CustomerBuyGoodsOnline',
+      TransactionType: TX_TYPE,
       Amount: Math.round(amount),
       PartyA: payer,
       PartyB: process.env.DARAJA_TILL,
