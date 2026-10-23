@@ -94,7 +94,10 @@ export async function stkQuery(checkoutRequestId) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ResultCode === undefined) return null;
-  return { resultCode: Number(data.ResultCode), resultDesc: data.ResultDesc };
+  const code = Number(data.ResultCode);
+  // 4999 = "still under processing". That is NOT a result, so treat it as pending.
+  if (code === 4999) return null;
+  return { resultCode: code, resultDesc: data.ResultDesc };
 }
 
 export function resultMessage(code, fallback) {

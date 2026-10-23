@@ -14,6 +14,8 @@ export function statusFromCode(code) {
  * - Only queues fulfilment when the amount paid matches the order.
  */
 export async function settle(checkoutRequestId, { resultCode, resultDesc, receipt, amount }) {
+  if (Number(resultCode) === 4999) return null; // still processing, never a final result
+
   const { data: order } = await supabase
     .from('orders').select('*').eq('checkout_request_id', checkoutRequestId).maybeSingle();
   if (!order) return null;
