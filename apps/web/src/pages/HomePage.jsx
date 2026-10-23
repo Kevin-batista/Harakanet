@@ -229,6 +229,26 @@ const FAQ_ITEMS = [
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Waits `ms`, but ends early when the tab becomes visible again (e.g. after the M-Pesa prompt). */
+function waitOrWake(ms) {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      resolve();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') done();
+    };
+    const timer = setTimeout(done, ms);
+    document.addEventListener('visibilitychange', onVisible);
+  });
+}
+
+/** Fast checks early (when the callback usually lands), gentler later. */
+const pollDelay = (elapsedMs) =>
+  elapsedMs < 20000 ? 1500 : elapsedMs < 45000 ? 2000 : 3000;
+
 /**
  * Accepts 07XXXXXXXX, 01XXXXXXXX, 2547XXXXXXXX, +2547XXXXXXXX (spaces allowed)
  * and returns the Daraja-ready format 2547XXXXXXXX. Returns null if invalid.
@@ -855,7 +875,7 @@ function Checkout({ plan, initialPhone, onClose }) {
       const started = Date.now();
 
       while (Date.now() - started < CONFIG.POLL_TIMEOUT_MS) {
-        await sleep(CONFIG.POLL_INTERVAL_MS);
+        await waitOrWake(pollDelay(Date.now() - started));
         if (cancelled.current) return;
 
         const result = await checkPaymentStatus(checkoutRequestId);

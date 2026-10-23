@@ -21,11 +21,11 @@ export default async function handler(req, res) {
     .from('orders').select('*').eq('checkout_request_id', id).maybeSingle();
   if (!order) return res.status(404).json({ status: 'failed', message: 'Order not found.' });
 
-  // Still pending after 20s? The callback may be late or lost, so ask Daraja directly.
-  // Throttled to once per 8s per order so we never hammer the API.
+  // Still pending after 10s? The callback may be late or lost, so ask Daraja directly.
+  // Throttled to once per 5s per order so we never hammer the API.
   const age = Date.now() - new Date(order.created_at).getTime();
   const sinceUpdate = Date.now() - new Date(order.updated_at).getTime();
-  if (order.status === 'pending' && age > 20000 && sinceUpdate > 8000) {
+  if (order.status === 'pending' && age > 10000 && sinceUpdate > 5000) {
     const q = await stkQuery(id);
     if (q) {
       const settled = await settle(id, q);
